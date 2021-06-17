@@ -1,0 +1,30 @@
+{
+	"folders": [
+		{
+			"path": "."
+		}
+	],
+	"settings": {
+		"python.linting.pylintArgs": [
+			"--extension-pkg-whitelist=PySide2",
+			"--module-naming-style=snake_case",
+			"--class-naming-style=PascalCase",
+			"--function-naming-style=camelCase",
+			"--method-naming-style=camelCase",
+			"--variable-naming-style=camelCase",
+			"--attr-naming-style=camelCase",
+			"--disable=W0611",
+			"--disable=F0401",
+			"--disable=C0413",
+			"--disable=C0411",
+			"--max-line-length=160"
+		],
+		"python.analysis.diagnosticSeverityOverrides": {
+			"reportMissingImports": "none",
+			"reportMissingModuleSource": "none"
+		  },
+		"editor.tabSize": 4,
+		"editor.insertSpaces": true,
+		"cSpell.diagnosticLevel": "Hint"
+	}
+}
