@@ -16,9 +16,12 @@ from optparse import OptionParser # pylint: disable=deprecated-module
 import logging
 import time
 
+from logging.handlers import SysLogHandler
+
 logger = logging.getLogger(ME)
 logger.setLevel(logging.INFO)
-hdlr = logging.StreamHandler(sys.stdout)
+#hdlr = logging.StreamHandler(sys.stderr)
+hdlr = logging.handlers.SysLogHandler(address = '/dev/log')
 formatter = logging.Formatter('[%(asctime)s] [%(levelname)-8s] \
                                [%(filename)s:%(lineno)4d] %(message)s',
                                datefmt="%Y-%m-%d %H:%M:%S")
@@ -54,30 +57,87 @@ class WebHookNotification():
         """
         eyecatcher=""
 
+
         if mode == NotificationMode.host:
+            downtimeNotification = False
+            downtimeString=""
+            logger.info("NAGIOS_HOSTSTATE: %s", nagios_env_vars["NAGIOS_HOSTSTATE"])
+            logger.info("NAGIOS_HOSTSTATE: %s", str(nagios_env_vars))
+
 
             if nagios_env_vars["NAGIOS_HOSTSTATE"] == "DOWN":
                 eyecatcher="❌"
             elif nagios_env_vars["NAGIOS_HOSTSTATE"] == "UP":
                 eyecatcher="✅"
+            elif nagios_env_vars["NAGIOS_HOSTSTATE"] == "UNREACHABLE":
+                eyecatcher="❗"
 
-            subject = "{} Host: `{}` is `{}`".format(eyecatcher,nagios_env_vars["NAGIOS_HOSTNAME"], nagios_env_vars["NAGIOS_HOSTSTATE"])
+            if "NAGIOS_NOTIFICATIONTYPE" in nagios_env_vars:
+                if nagios_env_vars["NAGIOS_NOTIFICATIONTYPE"] == "DOWNTIMESTART":
+                    eyecatcher="💤"
+                    downtimeNotification = True
+                    downtimeString="downtime scheduled"
+                if nagios_env_vars["NAGIOS_NOTIFICATIONTYPE"] == "DOWNTIMECANCELLED":
+                    eyecatcher="😳"
+                    downtimeNotification = True
+                    downtimeString="scheduled downtime canceled"
+                if nagios_env_vars["NAGIOS_NOTIFICATIONTYPE"] == "DOWNTIMEEND":
+                    eyecatcher="😳"
+                    downtimeNotification = True
+                    downtimeString="scheduled downtime expired"
+
+            if downtimeNotification:
+                subject = "{} Host: `{}` is `{}` - {}".format(eyecatcher,nagios_env_vars["NAGIOS_HOSTNAME"], nagios_env_vars["NAGIOS_HOSTSTATE"],downtimeString)
+            else:
+                subject = "{} Host: `{}` is `{}`".format(eyecatcher,nagios_env_vars["NAGIOS_HOSTNAME"], nagios_env_vars["NAGIOS_HOSTSTATE"])
+
             description = "Checkoutput: `{}`".format(nagios_env_vars["NAGIOS_HOSTOUTPUT"])
             link = "{}{}".format(link_base_url,nagios_env_vars["NAGIOS_HOSTNAME"])
 
         elif mode == NotificationMode.service:
-
+            downtimeNotification = False
+            downtimeString=""
+            logger.info("NAGIOS_SERVICESTATE: %s", nagios_env_vars["NAGIOS_SERVICESTATE"])
+            logger.info("NAGIOS_HOSTSTATE: %s", str(nagios_env_vars))
             if nagios_env_vars["NAGIOS_SERVICESTATE"] == "CRITICAL":
                 eyecatcher="❌"
             elif nagios_env_vars["NAGIOS_SERVICESTATE"] == "OK":
                 eyecatcher="✅"
+            elif nagios_env_vars["NAGIOS_SERVICESTATE"] == "WARNING":
+                eyecatcher="⚠️"
+            elif nagios_env_vars["NAGIOS_SERVICESTATE"] == "UNKNOWN":
+                eyecatcher="❓"
 
-            subject = "{} Service `{}` of Host: `{}` is `{}`".format(
-                      eyecatcher,
-                      nagios_env_vars["NAGIOS_SERVICEDESC"],
-                      nagios_env_vars["NAGIOS_HOSTNAME"],
-                      nagios_env_vars["NAGIOS_SERVICESTATE"]
-                )
+
+            if "NAGIOS_NOTIFICATIONTYPE" in nagios_env_vars:
+                if nagios_env_vars["NAGIOS_NOTIFICATIONTYPE"] == "DOWNTIMESTART":
+                    eyecatcher="💤"
+                    downtimeNotification = True
+                    downtimeString="downtime scheduled"
+                if nagios_env_vars["NAGIOS_NOTIFICATIONTYPE"] == "DOWNTIMECANCELLED":
+                    eyecatcher="😳"
+                    downtimeNotification = True
+                    downtimeString="scheduled downtime canceled"
+                if nagios_env_vars["NAGIOS_NOTIFICATIONTYPE"] == "DOWNTIMEEND":
+                    eyecatcher="😳"
+                    downtimeNotification = True
+                    downtimeString="scheduled downtime expired"
+
+            if downtimeNotification:
+                subject = "{} Service `{}` of Host: `{}` is `{}` - {}".format(
+                        eyecatcher,
+                        nagios_env_vars["NAGIOS_SERVICEDESC"],
+                        nagios_env_vars["NAGIOS_HOSTNAME"],
+                        nagios_env_vars["NAGIOS_SERVICESTATE"],
+                        downtimeString
+                    )
+            else:
+                subject = "{} Service `{}` of Host: `{}` is `{}`".format(
+                        eyecatcher,
+                        nagios_env_vars["NAGIOS_SERVICEDESC"],
+                        nagios_env_vars["NAGIOS_HOSTNAME"],
+                        nagios_env_vars["NAGIOS_SERVICESTATE"]
+                    )
             description = "Checkoutput: `{}`\n{}".format(nagios_env_vars["NAGIOS_SERVICEOUTPUT"],nagios_env_vars["NAGIOS_LONGSERVICEOUTPUT"])
             link = "{}{}".format(link_base_url,nagios_env_vars["NAGIOS_HOSTNAME"])
 
@@ -93,7 +153,7 @@ class WebHookNotification():
         """
         return
 
-    def print(self):
+    def printmessage(self):
         """
         WebHookNotification - send
         """
@@ -121,6 +181,7 @@ class WebHookNotificationCiscoWebex(WebHookNotification):
                                  verify=self.webhookEndpoint["sslVerify"],
                                  proxies=self.webhookEndpoint["proxy"]
                                 )
+        self.logger.info(response.text)
         cnt = 0
         while "Retry-After" in response.headers:
             cnt += 1
@@ -136,7 +197,7 @@ class WebHookNotificationCiscoWebex(WebHookNotification):
                                     proxies=self.webhookEndpoint["proxy"]
                                     )
             self.logger.info(response.headers)
-        self.logger.debug(response.text)
+        self.logger.info(response.text)
 
         return
 
@@ -260,6 +321,8 @@ def main():
             notify.send()
         else:
             logger.error("specify your receiving webhook service, see --help")
+    else:
+        logger.error("no NAGIOS env variables found.")
 
 if __name__ == '__main__':
     main()
